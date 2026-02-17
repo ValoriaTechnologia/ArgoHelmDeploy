@@ -9,11 +9,11 @@ The action expects a YAML file in the target repo with this structure:
 ```yaml
 packages:
   - name: NOM_PACKAGE
-    path: ./
+    path: ./application.yaml
 ```
 
-- **`name`**: Identifies the package (used with input `package-name`).
-- **`path`**: Path to the ArgoCD Application manifest—either a directory (e.g. `./` or `./apps/myapp`) or a direct file path (e.g. `./apps/myapp/application.yaml`). For directories, the action looks for a file with `kind: Application` in that directory.
+- **`name`**: Identifies the package (used with input `package_name`).
+- **`path`**: Path to the ArgoCD Application manifest **file** (must point to a file with `kind: Application`). Directories are not allowed. If the path contains **`$`**, it is replaced by the action input **`environment`** (required in that case); e.g. `./apps/$/application.yaml` with `environment: dev` → `./apps/dev/application.yaml`.
 
 ## Inputs
 
@@ -26,6 +26,7 @@ packages:
 | `version` | New value for `spec.source.targetRevision` | Yes |
 | `chart_name` | Optional. Chart name in `spec.source.chart` when multiple Applications exist in the same path | No |
 | `branch` | Branch to clone and push to | No (default: `main`) |
+| `environment` | Environment name (required when package path contains `$`). The `$` in path is replaced by this value | No (required if path contains `$`) |
 
 ## Example workflow
 
@@ -51,32 +52,51 @@ jobs:
       - name: Update ArgoCD Application
         uses: YOUR_ORG/ArgoHelmDeploy@v1
         with:
-          repo-url: 'https://github.com/YOUR_ORG/argocd-apps.git'
+          repo_url: 'https://github.com/YOUR_ORG/argocd-apps.git'
           token: ${{ secrets.ARGOCD_REPO_TOKEN }}
-          package-file-path: 'packages.yaml'
-          package-name: ${{ inputs.package_name }}
+          package_file_path: 'packages.yaml'
+          package_name: ${{ inputs.package_name }}
           version: ${{ inputs.version }}
 ```
 
 Replace `YOUR_ORG/ArgoHelmDeploy@v1` with your repo and tag (e.g. `ValoriaTechnologia/ArgoHelmDeploy@main` when testing from a branch).
 
+When the package path contains `$`, pass the **`environment`** input (e.g. `environment: 'dev'`). To update several environments, call the action **once per environment** (e.g. with a matrix):
+
+```yaml
+strategy:
+  matrix:
+    environment: [dev, staging, prod]
+steps:
+  - uses: YOUR_ORG/ArgoHelmDeploy@v1
+    with:
+      repo_url: '...'
+      token: ${{ secrets.ARGOCD_REPO_TOKEN }}
+      package_file_path: 'packages.yaml'
+      package_name: mypkg
+      version: ${{ inputs.version }}
+      environment: ${{ matrix.environment }}
+```
+
 ## Run action on mock repo (E2E)
 
-The workflow [.github/workflows/run-on-mock.yml](.github/workflows/run-on-mock.yml) runs the action for real against [ValoriaTechnologia/ArgoHelmDeploy-Mock](https://github.com/ValoriaTechnologia/ArgoHelmDeploy-Mock): it clones the repo, updates `application.yaml` `targetRevision`, commits and pushes. Trigger it manually (Actions → "Run action on mock repo" → Run workflow, optional input `version`) or on push to `main` when the action or workflow files change. **Required:** add a repository secret `MOCK_REPO_TOKEN` with a PAT that has write access to the mock repo; otherwise the push step will fail.
+The workflow [.github/workflows/run-on-mock.yml](.github/workflows/run-on-mock.yml) runs the action for real against [ValoriaTechnologia/ArgoHelmDeploy-Mock](https://github.com/ValoriaTechnologia/ArgoHelmDeploy-Mock): it clones the repo, updates `application.yaml` `targetRevision`, commits and pushes. The mock repo’s `packages.yaml` must use a **file path** (not a directory) to the Application manifest. Trigger it manually (Actions → "Run action on mock repo" → Run workflow, optional input `version`) or on push to `main` when the action or workflow files change. **Required:** add a repository secret `MOCK_REPO_TOKEN` (or `TOKEN_MOCK_REPO` as in the workflow) with a PAT that has write access to the mock repo; otherwise the push step will fail.
 
 ## Behaviour
 
-1. Clones the ArgoCD repo using `repo-url` and `token` (branch from `branch`).
-2. Reads the file at `package-file-path` and finds the package whose `name` equals `package-name`.
-3. Resolves the package `path` to an ArgoCD Application manifest (file or directory containing `kind: Application`).
-4. Sets `spec.source.targetRevision` (or the matching source in `spec.sources` when using `chart-name`) to `version`.
-5. Commits the change with message `chore(helm): update <package-name> to <version>` and pushes to the same branch.
+1. Clones the ArgoCD repo using `repo_url` and `token` (branch from `branch`).
+2. Reads the file at `package_file_path` and finds the package whose `name` equals `package_name`.
+3. If the package `path` contains `$`, the **`environment`** input is required; `$` is replaced by that value to get the file path. The path must point to a single Application manifest **file** (directories are not allowed).
+4. Sets `spec.source.targetRevision` (or the matching source in `spec.sources` when using `chart_name`) to `version`.
+5. Commits the change with message `chore(helm): update <package_name> to <version>` and pushes to the same branch.
+
+**One file per run.** To update multiple environments, the workflow must call the action **multiple times** (e.g. matrix over `environment`: one job or step per value).
 
 If `targetRevision` is already equal to `version`, the action skips the commit and push and exits successfully.
 
 ## Implementation
 
-The action is implemented in **Python 3.11** (composite action with `actions/setup-python` and `main.py`). No build step is required; the script runs as-is when the action is used via `uses: org/repo@ref`.
+The action is a **Docker action**: it runs in a container built from the repo’s [Dockerfile](Dockerfile) (Python 3.12, git, dependencies installed). There are no composite steps; the script [main.py](main.py) is executed inside the image when you use `uses: org/repo@ref`.
 
 ## Tests
 

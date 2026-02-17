@@ -102,16 +102,7 @@ def main() -> None:
     version = get_input("version", required=True).strip()
     chart_name = (get_input("chart-name", default="").strip() or None)
     branch = (get_input("branch", default="main").strip() or "main")
-    multi_raw = get_input("multi", default="").strip().lower()
-    multi = multi_raw in ("true", "1", "yes")
-    environments_str = get_input("environments", default="").strip()
-
-    if multi:
-        if not environments_str:
-            raise ValueError("When multi is set, environments (comma-separated list) is required.")
-        environments = [e.strip() for e in environments_str.split(",") if e.strip()]
-        if not environments:
-            raise ValueError("environments must contain at least one environment name.")
+    environment = get_input("environment", default="").strip()
 
     if token:
         print(f"::add-mask::{token}", flush=True)
@@ -145,38 +136,23 @@ def main() -> None:
         return
 
     pkg_path = pkg.get("path") or "./"
-    if multi:
-        if "$" not in pkg_path:
-            fail("In multi mode, package path must contain $ as placeholder for the environment name.")
-        targets: list[tuple[str, dict]] = []
-        for env in environments:
-            path_for_env = pkg_path.replace("$", env)
-            app_path, app_doc = resolve_application_path(workdir, path_for_env, chart_name)
-            targets.append((app_path, app_doc))
-    else:
-        app_path, app_doc = resolve_application_path(workdir, pkg_path, chart_name)
-        targets = [(app_path, app_doc)]
+    if "$" in pkg_path:
+        if not environment:
+            fail("Package path contains $; the environment input is required.")
+        pkg_path = pkg_path.replace("$", environment)
 
-    updated_paths: list[str] = []
-    for app_path, app_doc in targets:
-        update_target_revision(app_doc, version, chart_name)
-        with open(app_path, "w", encoding="utf-8") as f:
-            yaml.dump(app_doc, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        rel_path = Path(app_path).relative_to(workdir)
-        print(f"Updated targetRevision to {version} in {rel_path}")
-        updated_paths.append(app_path)
+    app_path, app_doc = resolve_application_path(workdir, pkg_path, chart_name)
+    update_target_revision(app_doc, version, chart_name)
+    with open(app_path, "w", encoding="utf-8") as f:
+        yaml.dump(app_doc, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    rel_path = Path(app_path).relative_to(workdir)
+    print(f"Updated targetRevision to {version} in {rel_path}")
 
     run_git(["config", "user.name", "github-actions[bot]"], cwd=workdir)
     run_git(["config", "user.email", "github-actions[bot]@users.noreply.github.com"], cwd=workdir)
-    for app_path in updated_paths:
-        rel_path = Path(app_path).relative_to(workdir)
-        run_git(["add", str(rel_path)], cwd=workdir)
+    run_git(["add", str(rel_path)], cwd=workdir)
 
-    commit_msg = (
-        f"chore(helm): update {package_name} to {version} (envs: {','.join(environments)})"
-        if multi
-        else f"chore(helm): update {package_name} to {version}"
-    )
+    commit_msg = f"chore(helm): update {package_name} to {version}"
     commit_result = run_git(
         ["commit", "-m", commit_msg],
         cwd=workdir,

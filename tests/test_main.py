@@ -217,8 +217,8 @@ def test_main_package_not_in_file_skips_without_error(tmp_path, capsys):
     assert "2.0.0" not in (workdir / "app.yaml").read_text()
 
 
-def test_main_multi_updates_multiple_env_files(tmp_path):
-    """Multi mode: path with $, environments dev,staging; both files updated, single commit."""
+def test_main_path_with_dollar_environment_provided_updates_one_file(tmp_path):
+    """Path with $ and environment set: single file (e.g. apps/dev/application.yaml) updated."""
     workdir = tmp_path / "workdir"
     workdir.mkdir()
     (workdir / "packages.yaml").write_text("""packages:
@@ -226,10 +226,8 @@ def test_main_multi_updates_multiple_env_files(tmp_path):
     path: apps/$/application.yaml
 """)
     (workdir / "apps" / "dev").mkdir(parents=True)
-    (workdir / "apps" / "staging").mkdir(parents=True)
     app_content = "kind: Application\nspec:\n  source:\n    chart: c\n    targetRevision: '1.0.0'"
     (workdir / "apps" / "dev" / "application.yaml").write_text(app_content)
-    (workdir / "apps" / "staging" / "application.yaml").write_text(app_content)
 
     env = {
         "INPUT_REPO_URL": "https://github.com/org/repo.git",
@@ -239,8 +237,7 @@ def test_main_multi_updates_multiple_env_files(tmp_path):
         "INPUT_VERSION": "2.0.0",
         "INPUT_CHART_NAME": "",
         "INPUT_BRANCH": "main",
-        "INPUT_MULTI": "true",
-        "INPUT_ENVIRONMENTS": "dev,staging",
+        "INPUT_ENVIRONMENT": "dev",
     }
 
     with patch.object(main_module, "tempfile") as m_tempfile:
@@ -251,33 +248,42 @@ def test_main_multi_updates_multiple_env_files(tmp_path):
                 main_module.main()
 
     assert (workdir / "apps" / "dev" / "application.yaml").read_text().count("2.0.0") >= 1
-    assert (workdir / "apps" / "staging" / "application.yaml").read_text().count("2.0.0") >= 1
     add_calls = [c[0][0] for c in m_run_git.call_args_list if c[0][0] and c[0][0][0] == "add"]
-    assert len(add_calls) == 2
+    assert len(add_calls) == 1
     commit_calls = [c for c in m_run_git.call_args_list if c[0][0] and c[0][0][0] == "commit"]
     assert len(commit_calls) == 1
-    # call_args = (args_tuple, kwargs); args_tuple[0] = list passed to run_git
-    git_args_list = commit_calls[0][0][0]
-    commit_msg = git_args_list[2] if len(git_args_list) > 2 else str(git_args_list)
-    assert "envs:" in commit_msg or "dev" in commit_msg
 
 
-def test_main_multi_without_environments_raises():
-    with patch.dict(
-        os.environ,
-        {
-            "INPUT_REPO_URL": "https://x.git",
-            "INPUT_TOKEN": "t",
-            "INPUT_PACKAGE_FILE_PATH": "p.yaml",
-            "INPUT_PACKAGE_NAME": "pkg",
-            "INPUT_VERSION": "1",
-            "INPUT_MULTI": "true",
-            "INPUT_ENVIRONMENTS": "",
-        },
-        clear=False,
-    ):
-        with pytest.raises(ValueError, match="environments.*required"):
-            main_module.main()
+def test_main_path_with_dollar_without_environment_fails(tmp_path):
+    """Path contains $ but environment empty: action fails."""
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    (workdir / "packages.yaml").write_text("""packages:
+  - name: mypkg
+    path: apps/$/application.yaml
+""")
+    (workdir / "apps" / "dev").mkdir(parents=True)
+    (workdir / "apps" / "dev" / "application.yaml").write_text(
+        "kind: Application\nspec:\n  source:\n    chart: c\n    targetRevision: '1'"
+    )
+
+    env = {
+        "INPUT_REPO_URL": "https://github.com/org/repo.git",
+        "INPUT_TOKEN": "secret",
+        "INPUT_PACKAGE_FILE_PATH": "packages.yaml",
+        "INPUT_PACKAGE_NAME": "mypkg",
+        "INPUT_VERSION": "2.0.0",
+        "INPUT_BRANCH": "main",
+        "INPUT_ENVIRONMENT": "",
+    }
+
+    with patch.object(main_module, "tempfile") as m_tempfile:
+        m_tempfile.mkdtemp.return_value = str(workdir)
+        with patch.object(main_module, "run_git") as m_run_git:
+            m_run_git.return_value = MagicMock(returncode=0)
+            with patch.dict(os.environ, env, clear=False):
+                with pytest.raises(SystemExit):
+                    main_module.main()
 
 
 # --- integration test (real clone, mock push) ---

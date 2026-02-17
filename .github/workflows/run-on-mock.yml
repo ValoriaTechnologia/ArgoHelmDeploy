@@ -25,3 +25,15 @@ jobs:
           version: ${{ github.event.inputs.version || '2.0.0' }}
           chart_name: 'my-chart'
           branch: 'main'
+
+      - name: Run action on ArgoHelmDeploy-Mock
+        uses: ./
+        with:
+          repo_url: 'https://github.com/ValoriaTechnologia/ArgoHelmDeploy-Mock.git'
+          token: ${{ secrets.TOKEN_MOCK_REPO }}
+          package_file_path: 'packages.yaml'
+          package_name: 'argo-app2'
+          version: ${{ github.event.inputs.version || '2.0.0' }}
+          chart_name: 'my-chart'
+          branch: 'main'
+          environment: 'dev'
