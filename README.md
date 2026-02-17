@@ -19,12 +19,12 @@ packages:
 
 | Input | Description | Required |
 | ----- | ----------- | -------- |
-| `repo-url` | HTTPS URL of the ArgoCD Git repository | Yes |
+| `repo_url` | HTTPS URL of the ArgoCD Git repository | Yes |
 | `token` | Authentication token (PAT or `GITHUB_TOKEN`) with read/write access to the repo | Yes |
-| `package-file-path` | Path to the packages YAML file in the repo (e.g. `packages.yaml`) | Yes |
-| `package-name` | Name of the package to update (must match `packages[].name`) | Yes |
+| `package_file_path` | Path to the packages YAML file in the repo (e.g. `packages.yaml`) | Yes |
+| `package_name` | Name of the package to update (must match `packages[].name`) | Yes |
 | `version` | New value for `spec.source.targetRevision` | Yes |
-| `chart-name` | Optional. Chart name in `spec.source.chart` when multiple Applications exist in the same path | No |
+| `chart_name` | Optional. Chart name in `spec.source.chart` when multiple Applications exist in the same path | No |
 | `branch` | Branch to clone and push to | No (default: `main`) |
 
 ## Example workflow
