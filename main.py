@@ -15,6 +15,16 @@ def fail(message: str) -> None:
     sys.exit(1)
 
 
+def get_input(name: str, default: str | None = None, *, required: bool = False) -> str:
+    key = f"INPUT_{name.upper().replace('-', '_')}"
+    val = os.environ.get(key)
+    if val is None or val == "":
+        if required and default is None:
+            raise ValueError(f"Missing required input: {name} (env {key})")
+        return default or ""
+    return val
+
+
 def build_auth_url(repo_url: str, token: str) -> str:
     normalized = repo_url.strip()
     if normalized.startswith("git@github.com:"):
@@ -128,16 +138,13 @@ def run_git(args: list[str], cwd: str, check: bool = True) -> subprocess.Complet
 
 
 def main() -> None:
-    repo_url = (os.environ.get("REPO_URL") or "").strip()
-    token = (os.environ.get("TOKEN") or "").strip()
-    package_file_path = (os.environ.get("PACKAGE_FILE_PATH") or "").strip()
-    package_name = (os.environ.get("PACKAGE_NAME") or "").strip()
-    version = (os.environ.get("VERSION") or "").strip()
-    chart_name = (os.environ.get("CHART_NAME") or "").strip() or None
-    branch = (os.environ.get("BRANCH") or "main").strip() or "main"
-
-    if not all([repo_url, token, package_file_path, package_name, version]):
-        fail("Required inputs: REPO_URL, TOKEN, PACKAGE_FILE_PATH, PACKAGE_NAME, VERSION.")
+    repo_url = get_input("repo-url", required=True).strip()
+    token = get_input("token", required=True).strip()
+    package_file_path = get_input("package-file-path", required=True).strip()
+    package_name = get_input("package-name", required=True).strip()
+    version = get_input("version", required=True).strip()
+    chart_name = (get_input("chart-name", default="").strip() or None)
+    branch = (get_input("branch", default="main").strip() or "main")
 
     if token:
         print(f"::add-mask::{token}", flush=True)
@@ -199,6 +206,9 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
     except subprocess.CalledProcessError as e:
         if e.stderr:
             print(e.stderr, file=sys.stderr)

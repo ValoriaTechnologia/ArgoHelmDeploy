@@ -216,13 +216,13 @@ spec:
 """)
 
     env = {
-        "REPO_URL": "https://github.com/org/repo.git",
-        "TOKEN": "secret",
-        "PACKAGE_FILE_PATH": "packages.yaml",
-        "PACKAGE_NAME": "mypkg",
-        "VERSION": "2.0.0",
-        "CHART_NAME": "",
-        "BRANCH": "main",
+        "INPUT_REPO_URL": "https://github.com/org/repo.git",
+        "INPUT_TOKEN": "secret",
+        "INPUT_PACKAGE_FILE_PATH": "packages.yaml",
+        "INPUT_PACKAGE_NAME": "mypkg",
+        "INPUT_VERSION": "2.0.0",
+        "INPUT_CHART_NAME": "",
+        "INPUT_BRANCH": "main",
     }
 
     with patch.object(main_module, "tempfile") as m_tempfile:
@@ -252,8 +252,8 @@ spec:
 
 
 def test_main_missing_required_input_exits():
-    with patch.dict(os.environ, {"REPO_URL": "", "TOKEN": "x", "PACKAGE_FILE_PATH": "p", "PACKAGE_NAME": "n", "VERSION": "1"}, clear=False):
-        with pytest.raises(SystemExit):
+    with patch.dict(os.environ, {"INPUT_REPO_URL": "", "INPUT_TOKEN": "x", "INPUT_PACKAGE_FILE_PATH": "p", "INPUT_PACKAGE_NAME": "n", "INPUT_VERSION": "1"}, clear=False):
+        with pytest.raises(ValueError, match="Missing required input"):
             main_module.main()
 
 
@@ -273,13 +273,13 @@ def test_integration_real_mock_repo(tmp_path):
         return run_git_orig(args, cwd=cwd, check=check)
 
     env = {
-        "REPO_URL": "https://github.com/ValoriaTechnologia/ArgoHelmDeploy-Mock.git",
-        "TOKEN": "dummy",
-        "PACKAGE_FILE_PATH": "packages.yaml",
-        "PACKAGE_NAME": "argo-app",
-        "VERSION": "2.0.0",
-        "CHART_NAME": "my-chart",
-        "BRANCH": "main",
+        "INPUT_REPO_URL": "https://github.com/ValoriaTechnologia/ArgoHelmDeploy-Mock.git",
+        "INPUT_TOKEN": "dummy",
+        "INPUT_PACKAGE_FILE_PATH": "packages.yaml",
+        "INPUT_PACKAGE_NAME": "argo-app",
+        "INPUT_VERSION": "2.0.0",
+        "INPUT_CHART_NAME": "my-chart",
+        "INPUT_BRANCH": "main",
     }
 
     with patch.object(main_module, "tempfile") as m_tempfile:
