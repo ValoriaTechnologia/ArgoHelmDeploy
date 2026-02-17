@@ -255,3 +255,42 @@ def test_main_missing_required_input_exits():
     with patch.dict(os.environ, {"REPO_URL": "", "TOKEN": "x", "PACKAGE_FILE_PATH": "p", "PACKAGE_NAME": "n", "VERSION": "1"}, clear=False):
         with pytest.raises(SystemExit):
             main_module.main()
+
+
+# --- integration test (real clone, mock push) ---
+
+
+@pytest.mark.integration
+def test_integration_real_mock_repo(tmp_path):
+    """Clone real ArgoHelmDeploy-Mock repo, run main(), assert application.yaml updated; push is mocked."""
+    workdir = tmp_path / "workdir"
+
+    run_git_orig = main_module.run_git
+
+    def run_git_wrapper(args, cwd=None, check=True):
+        if args and args[0] == "push":
+            return MagicMock(returncode=0)
+        return run_git_orig(args, cwd=cwd, check=check)
+
+    env = {
+        "REPO_URL": "https://github.com/ValoriaTechnologia/ArgoHelmDeploy-Mock.git",
+        "TOKEN": "dummy",
+        "PACKAGE_FILE_PATH": "packages.yaml",
+        "PACKAGE_NAME": "argo-app",
+        "VERSION": "2.0.0",
+        "CHART_NAME": "my-chart",
+        "BRANCH": "main",
+    }
+
+    with patch.object(main_module, "tempfile") as m_tempfile:
+        m_tempfile.mkdtemp.return_value = str(workdir)
+        with patch.object(main_module, "run_git", run_git_wrapper):
+            with patch.dict(os.environ, env, clear=False):
+                main_module.main()
+
+    app_file = workdir / "application.yaml"
+    assert app_file.exists(), "application.yaml should exist after main()"
+    import yaml
+    doc = yaml.safe_load(app_file.read_text(encoding="utf-8"))
+    assert doc.get("spec", {}).get("source", {}).get("targetRevision") == "2.0.0"
+    assert doc.get("spec", {}).get("source", {}).get("chart") == "my-chart"

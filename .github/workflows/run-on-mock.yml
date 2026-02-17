@@ -1,0 +1,27 @@
+# Run the action for real against the ArgoHelmDeploy-Mock repo:
+# clone, update application.yaml targetRevision, commit and push.
+# Requires secret MOCK_REPO_TOKEN with write access to ValoriaTechnologia/ArgoHelmDeploy-Mock.
+name: Run action on mock repo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  run-action-on-mock:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Run action on ArgoHelmDeploy-Mock
+        uses: ./
+        with:
+          repo-url: 'https://github.com/ValoriaTechnologia/ArgoHelmDeploy-Mock.git'
+          token: ${{ secrets.GITHUB_TOKEN }}
+          package-file-path: 'packages.yaml'
+          package-name: 'argo-app'
+          version: ${{ github.event.inputs.version || '2.0.0' }}
+          chart-name: 'my-chart'
+          branch: 'main'

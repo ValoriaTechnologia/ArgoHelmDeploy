@@ -60,6 +60,10 @@ jobs:
 
 Replace `YOUR_ORG/ArgoHelmDeploy@v1` with your repo and tag (e.g. `ValoriaTechnologia/ArgoHelmDeploy@main` when testing from a branch).
 
+## Run action on mock repo (E2E)
+
+The workflow [.github/workflows/run-on-mock.yml](.github/workflows/run-on-mock.yml) runs the action for real against [ValoriaTechnologia/ArgoHelmDeploy-Mock](https://github.com/ValoriaTechnologia/ArgoHelmDeploy-Mock): it clones the repo, updates `application.yaml` `targetRevision`, commits and pushes. Trigger it manually (Actions → "Run action on mock repo" → Run workflow, optional input `version`) or on push to `main` when the action or workflow files change. **Required:** add a repository secret `MOCK_REPO_TOKEN` with a PAT that has write access to the mock repo; otherwise the push step will fail.
+
 ## Behaviour
 
 1. Clones the ArgoCD repo using `repo-url` and `token` (branch from `branch`).
