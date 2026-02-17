@@ -19,7 +19,7 @@ jobs:
         uses: ./
         with:
           repo-url: 'https://github.com/ValoriaTechnologia/ArgoHelmDeploy-Mock.git'
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.TOKEN_MOCK_REPO }}
           package-file-path: 'packages.yaml'
           package-name: 'argo-app'
           version: ${{ github.event.inputs.version || '2.0.0' }}
