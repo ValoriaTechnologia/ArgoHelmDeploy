@@ -4,22 +4,22 @@ branding:
   icon: 'refresh-cw'
   color: 'blue'
 inputs:
-  repo-url:
+  repo_url:
     description: 'URL of the ArgoCD Git repository (HTTPS)'
     required: true
   token:
     description: 'Authentication token (PAT or GITHUB_TOKEN)'
     required: true
-  package-file-path:
+  package_file_path:
     description: 'Path to the packages YAML file in the repo (e.g. packages.yaml)'
     required: true
-  package-name:
+  package_name:
     description: 'Name of the package to update (matches packages[].name)'
     required: true
   version:
     description: 'New value for spec.source.targetRevision'
     required: true
-  chart-name:
+  chart_name:
     description: 'Optional: chart name in spec.source.chart to target when multiple Applications in the same path'
     required: false
   branch:
