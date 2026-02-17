@@ -174,7 +174,8 @@ def main() -> None:
             pkg = p
             break
     if not pkg:
-        fail(f'Package "{package_name}" not found in {package_file_path}.')
+        print(f'Package "{package_name}" not found in {package_file_path}; skipping.')
+        return
 
     pkg_path = pkg.get("path") or "./"
     app_path, app_doc = resolve_application_path(workdir, pkg_path, chart_name)
