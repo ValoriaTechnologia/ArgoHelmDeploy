@@ -26,6 +26,12 @@ inputs:
     description: 'Branch to clone and push to'
     required: false
     default: 'main'
+  multi:
+    description: 'Enable multi-environment mode; package path must contain $ and environments is required.'
+    required: false
+  environments:
+    description: 'Comma-separated list of environment names (required when multi is set). The $ in package path is replaced by each environment name.'
+    required: false
 runs:
   using: 'docker'
   image: 'Dockerfile'

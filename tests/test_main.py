@@ -1,4 +1,4 @@
-"""Tests for main module: build_auth_url, find_application_in_dir, resolve_application_path, update_target_revision, main."""
+"""Tests for main module: build_auth_url, resolve_application_path, update_target_revision, main."""
 
 import os
 import subprocess
@@ -49,81 +49,6 @@ def test_build_auth_url_strips_whitespace():
     assert "x-access-token:t@" in out
 
 
-# --- find_application_in_dir ---
-
-
-def test_find_application_in_dir_empty_returns_none(tmp_path):
-    assert main_module.find_application_in_dir(str(tmp_path), None) is None
-
-
-def test_find_application_in_dir_non_yaml_ignored(tmp_path):
-    (tmp_path / "readme.txt").write_text("hello")
-    assert main_module.find_application_in_dir(str(tmp_path), None) is None
-
-
-def test_find_application_in_dir_yaml_not_application_ignored(tmp_path):
-    (tmp_path / "other.yaml").write_text("kind: ConfigMap\nmetadata:\n  name: x")
-    assert main_module.find_application_in_dir(str(tmp_path), None) is None
-
-
-def test_find_application_in_dir_single_application(tmp_path):
-    app_yaml = """apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: myapp
-spec:
-  source:
-    chart: mychart
-    targetRevision: "1.0.0"
-"""
-    (tmp_path / "app.yaml").write_text(app_yaml)
-    result = main_module.find_application_in_dir(str(tmp_path), None)
-    assert result is not None
-    path, doc = result
-    assert "app.yaml" in path
-    assert doc.get("kind") == "Application"
-    assert doc.get("spec", {}).get("source", {}).get("targetRevision") == "1.0.0"
-
-
-def test_find_application_in_dir_two_applications_returns_first(tmp_path):
-    (tmp_path / "a.yaml").write_text("kind: Application\nspec:\n  source:\n    chart: ca\n    targetRevision: '1'")
-    (tmp_path / "b.yaml").write_text("kind: Application\nspec:\n  source:\n    chart: cb\n    targetRevision: '2'")
-    result = main_module.find_application_in_dir(str(tmp_path), None)
-    assert result is not None
-    path, _ = result
-    assert "a.yaml" in path or "b.yaml" in path
-
-
-def test_find_application_in_dir_with_chart_name_matches_source(tmp_path):
-    (tmp_path / "x.yaml").write_text(
-        "kind: Application\nspec:\n  source:\n    chart: wanted\n    targetRevision: '0'"
-    )
-    (tmp_path / "y.yaml").write_text(
-        "kind: Application\nspec:\n  source:\n    chart: other\n    targetRevision: '0'"
-    )
-    result = main_module.find_application_in_dir(str(tmp_path), "wanted")
-    assert result is not None
-    path, doc = result
-    assert doc.get("spec", {}).get("source", {}).get("chart") == "wanted"
-
-
-def test_find_application_in_dir_with_chart_name_matches_sources(tmp_path):
-    (tmp_path / "multi.yaml").write_text("""
-kind: Application
-spec:
-  sources:
-    - chart: first
-      targetRevision: '1'
-    - chart: second
-      targetRevision: '2'
-""")
-    result = main_module.find_application_in_dir(str(tmp_path), "second")
-    assert result is not None
-    _, doc = result
-    sources = doc.get("spec", {}).get("sources", [])
-    assert any(s.get("chart") == "second" for s in sources)
-
-
 # --- resolve_application_path ---
 
 
@@ -142,11 +67,10 @@ def test_resolve_application_path_file_not_application_exits(tmp_path):
         main_module.resolve_application_path(str(tmp_path), "bad.yaml", None)
 
 
-def test_resolve_application_path_dir_contains_application(tmp_path):
+def test_resolve_application_path_directory_fails(tmp_path):
     (tmp_path / "app.yaml").write_text("kind: Application\nspec:\n  source:\n    chart: x\n    targetRevision: '0'")
-    path, doc = main_module.resolve_application_path(str(tmp_path), ".", None)
-    assert "app.yaml" in path
-    assert doc.get("kind") == "Application"
+    with pytest.raises(SystemExit):
+        main_module.resolve_application_path(str(tmp_path), ".", None)
 
 
 def test_resolve_application_path_nonexistent_exits(tmp_path):
@@ -203,7 +127,7 @@ def test_main_happy_path_updates_application_file(tmp_path):
     workdir.mkdir()
     (workdir / "packages.yaml").write_text("""packages:
   - name: mypkg
-    path: ./
+    path: app.yaml
 """)
     (workdir / "app.yaml").write_text("""apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -263,7 +187,7 @@ def test_main_package_not_in_file_skips_without_error(tmp_path, capsys):
     workdir.mkdir()
     (workdir / "packages.yaml").write_text("""packages:
   - name: otherpkg
-    path: ./
+    path: app.yaml
 """)
     (workdir / "app.yaml").write_text("kind: Application\nspec:\n  source:\n    chart: x\n    targetRevision: '1'")
 
@@ -293,10 +217,74 @@ def test_main_package_not_in_file_skips_without_error(tmp_path, capsys):
     assert "2.0.0" not in (workdir / "app.yaml").read_text()
 
 
+def test_main_multi_updates_multiple_env_files(tmp_path):
+    """Multi mode: path with $, environments dev,staging; both files updated, single commit."""
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    (workdir / "packages.yaml").write_text("""packages:
+  - name: mypkg
+    path: apps/$/application.yaml
+""")
+    (workdir / "apps" / "dev").mkdir(parents=True)
+    (workdir / "apps" / "staging").mkdir(parents=True)
+    app_content = "kind: Application\nspec:\n  source:\n    chart: c\n    targetRevision: '1.0.0'"
+    (workdir / "apps" / "dev" / "application.yaml").write_text(app_content)
+    (workdir / "apps" / "staging" / "application.yaml").write_text(app_content)
+
+    env = {
+        "INPUT_REPO_URL": "https://github.com/org/repo.git",
+        "INPUT_TOKEN": "secret",
+        "INPUT_PACKAGE_FILE_PATH": "packages.yaml",
+        "INPUT_PACKAGE_NAME": "mypkg",
+        "INPUT_VERSION": "2.0.0",
+        "INPUT_CHART_NAME": "",
+        "INPUT_BRANCH": "main",
+        "INPUT_MULTI": "true",
+        "INPUT_ENVIRONMENTS": "dev,staging",
+    }
+
+    with patch.object(main_module, "tempfile") as m_tempfile:
+        m_tempfile.mkdtemp.return_value = str(workdir)
+        with patch.object(main_module, "run_git") as m_run_git:
+            m_run_git.return_value = MagicMock(returncode=0)
+            with patch.dict(os.environ, env, clear=False):
+                main_module.main()
+
+    assert (workdir / "apps" / "dev" / "application.yaml").read_text().count("2.0.0") >= 1
+    assert (workdir / "apps" / "staging" / "application.yaml").read_text().count("2.0.0") >= 1
+    add_calls = [c[0][0] for c in m_run_git.call_args_list if c[0][0] and c[0][0][0] == "add"]
+    assert len(add_calls) == 2
+    commit_calls = [c for c in m_run_git.call_args_list if c[0][0] and c[0][0][0] == "commit"]
+    assert len(commit_calls) == 1
+    # call_args = (args_tuple, kwargs); args_tuple[0] = list passed to run_git
+    git_args_list = commit_calls[0][0][0]
+    commit_msg = git_args_list[2] if len(git_args_list) > 2 else str(git_args_list)
+    assert "envs:" in commit_msg or "dev" in commit_msg
+
+
+def test_main_multi_without_environments_raises():
+    with patch.dict(
+        os.environ,
+        {
+            "INPUT_REPO_URL": "https://x.git",
+            "INPUT_TOKEN": "t",
+            "INPUT_PACKAGE_FILE_PATH": "p.yaml",
+            "INPUT_PACKAGE_NAME": "pkg",
+            "INPUT_VERSION": "1",
+            "INPUT_MULTI": "true",
+            "INPUT_ENVIRONMENTS": "",
+        },
+        clear=False,
+    ):
+        with pytest.raises(ValueError, match="environments.*required"):
+            main_module.main()
+
+
 # --- integration test (real clone, mock push) ---
 
 
 @pytest.mark.integration
+@pytest.mark.skip(reason="Mock repo uses directory path; action now requires path to be a file (see plan). Update ArgoHelmDeploy-Mock packages.yaml to use file path to run this test.")
 def test_integration_real_mock_repo(tmp_path):
     """Clone real ArgoHelmDeploy-Mock repo, run main(), assert application.yaml updated; push is mocked."""
     workdir = tmp_path / "workdir"
