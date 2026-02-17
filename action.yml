@@ -35,9 +35,11 @@ runs:
         python-version: '3.11'
 
     - name: Install dependencies
+      shell: bash
       run: pip install -r requirements.txt
 
     - name: Update ArgoCD Helm version
+      shell: bash
       run: python main.py
       env:
         REPO_URL: ${{ inputs.repo-url }}
