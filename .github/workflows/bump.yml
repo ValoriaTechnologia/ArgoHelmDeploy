@@ -1,0 +1,57 @@
+name: "Bump Action"
+
+on:
+  workflow_call:
+    outputs:
+        new_tag:
+          description: "Le nouveau tag généré"
+          value: ${{ jobs.bump.outputs.tag_output }}
+        changelog:
+          description: "Le changelog généré"
+          value: ${{ jobs.bump.outputs.changelog_output }}
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_output: ${{ steps.tag.outputs.new_tag }}
+      changelog_output: ${{ steps.tag.outputs.changelog }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump tag version (dry run)
+        id: tag
+        uses: ValoriaTechnologia/github-tag-action@v0.1.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          release_branches: main
+          default_bump: false
+          dry_run: true
+
+      - name: Update action.yml docker version
+        if: steps.tag.outputs.new_tag != ''
+        uses: ValoriaTechnologia/FieldChartUpdater@v0.1.2
+        with:
+          file: ./action.yml
+          edits: '[{"path": "runs.image", "value": "ghcr.io/valoriatechnologia/argo-helm-deploy:${{ steps.tag.outputs.new_tag }}"}]'
+
+      - name: Commit version bump
+        if: steps.tag.outputs.new_tag != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add action.yml
+          git commit -m "chore: bump version in action.yml to ${{ steps.tag.outputs.new_tag }}"
+          git push
+
+      - name: Push temp branch and create tag
+        if: steps.tag.outputs.new_tag != ''
+        run: |
+          git tag -a ${{ steps.tag.outputs.new_tag }} -m "${{ steps.tag.outputs.new_tag }}"
+          git push origin ${{ steps.tag.outputs.new_tag }}

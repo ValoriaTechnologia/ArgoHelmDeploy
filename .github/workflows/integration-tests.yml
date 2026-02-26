@@ -1,12 +1,6 @@
-# Run the action for real against the ArgoHelmDeploy-Mock repo:
-# clone, update application.yaml targetRevision, commit and push.
-# Requires secret MOCK_REPO_TOKEN with write access to ValoriaTechnologia/ArgoHelmDeploy-Mock.
-name: Run action on mock repo
-
+name: "Integration Tests"
 on:
-  workflow_dispatch:
-  push:
-    branches: [main]
+  workflow_call:
 
 jobs:
   run-action-on-mock:
@@ -14,6 +8,12 @@ jobs:
     steps:
       - name: Checkout this repo
         uses: actions/checkout@v4
+
+      - name: Update action.yml docker version
+        uses: ValoriaTechnologia/FieldChartUpdater@v0.1.2
+        with:
+          file: ./action.yml
+          edits: '[{"path": "runs.image", "value": "Dockerfile"}]'
 
       - name: Run action on ArgoHelmDeploy-Mock
         uses: ./
