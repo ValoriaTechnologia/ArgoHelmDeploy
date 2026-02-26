@@ -12,6 +12,7 @@ jobs:
   e2e-tests-job:
     if: github.actor != 'github-actions[bot]'
     uses: ./.github/workflows/integration-tests.yml
+    secrets: inherit
   unit-tests-job:
     if: github.actor != 'github-actions[bot]'
     uses: ./.github/workflows/unit-tests.yml
