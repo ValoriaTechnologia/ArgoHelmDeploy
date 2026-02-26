@@ -11,7 +11,7 @@ permissions:
 jobs:
   e2e-tests-job:
     if: github.actor != 'github-actions[bot]'
-    uses: ./.github/workflows/e2e-tests.yml
+    uses: ./.github/workflows/integration-tests.yml
   unit-tests-job:
     if: github.actor != 'github-actions[bot]'
     uses: ./.github/workflows/unit-tests.yml
