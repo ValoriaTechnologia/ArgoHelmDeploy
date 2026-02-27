@@ -39,7 +39,7 @@ jobs:
         uses: ValoriaTechnologia/FieldChartUpdater@v0.1.2
         with:
           file: ./action.yml
-          edits: '[{"path": "runs.image", "value": "ghcr.io/valoriatechnologia/argo-helm-deploy:${{ steps.tag.outputs.new_tag }}"}]'
+          edits: '[{"path": "runs.image", "value": "docker://ghcr.io/valoriatechnologia/argo-helm-deploy:${{ steps.tag.outputs.new_tag }}"}]'
 
       - name: Commit version bump
         if: steps.tag.outputs.new_tag != ''
