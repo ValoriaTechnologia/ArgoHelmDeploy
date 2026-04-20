@@ -135,6 +135,11 @@ def main() -> None:
         print(f'Package "{package_name}" not found in {package_file_path}; skipping.')
         return
 
+    pkg_bootstrap = pkg.get("bootstrap") or False
+    if pkg_bootstrap:
+        print("Bootstrap package found, skipping.")
+        return
+
     pkg_path = pkg.get("path") or "./"
     if "$" in pkg_path:
         if not environment:
