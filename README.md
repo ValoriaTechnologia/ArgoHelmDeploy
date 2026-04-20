@@ -14,6 +14,7 @@ packages:
 
 - **`name`**: Identifies the package (used with input `package_name`).
 - **`path`**: Path to the ArgoCD Application manifest **file** (must point to a file with `kind: Application`). Directories are not allowed. If the path contains **`$`**, it is replaced by the action input **`environment`** (required in that case); e.g. `./apps/$/application.yaml` with `environment: dev` → `./apps/dev/application.yaml`.
+- **`bootstrap`**: Optional boolean (`true` / `false`). If `true`, the action finds the package but does **not** bump `targetRevision` (it prints a skip message and exits successfully). Use this for bootstrap-style applications that should not receive automated Helm version updates.
 
 ## Inputs
 
@@ -86,9 +87,10 @@ The workflow [.github/workflows/run-on-mock.yml](.github/workflows/run-on-mock.y
 
 1. Clones the ArgoCD repo using `repo_url` and `token` (branch from `branch`).
 2. Reads the file at `package_file_path` and finds the package whose `name` equals `package_name`.
-3. If the package `path` contains `$`, the **`environment`** input is required; `$` is replaced by that value to get the file path. The path must point to a single Application manifest **file** (directories are not allowed).
-4. Sets `spec.source.targetRevision` (or the matching source in `spec.sources` when using `chart_name`) to `version`.
-5. Commits the change with message `chore(helm): update <package_name> to <version>` and pushes to the same branch.
+3. If `bootstrap` is `true` for that package, the action prints a skip message and exits successfully (no Application file change, no commit or push).
+4. If the package `path` contains `$`, the **`environment`** input is required; `$` is replaced by that value to get the file path. The path must point to a single Application manifest **file** (directories are not allowed).
+5. Sets `spec.source.targetRevision` (or the matching source in `spec.sources` when using `chart_name`) to `version`.
+6. Commits the change with message `chore(helm): update <package_name> to <version>` and pushes to the same branch.
 
 **One file per run.** To update multiple environments, the workflow must call the action **multiple times** (e.g. matrix over `environment`: one job or step per value).
 

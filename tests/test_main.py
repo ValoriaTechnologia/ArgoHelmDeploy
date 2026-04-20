@@ -217,6 +217,45 @@ def test_main_package_not_in_file_skips_without_error(tmp_path, capsys):
     assert "2.0.0" not in (workdir / "app.yaml").read_text()
 
 
+def test_main_bootstrap_true_skips_without_updating(tmp_path, capsys):
+    """When the matched package has bootstrap: true, main() exits without changing the Application or git add/commit."""
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    (workdir / "packages.yaml").write_text("""packages:
+  - name: mypkg
+    bootstrap: true
+    path: app.yaml
+""")
+    (workdir / "app.yaml").write_text("kind: Application\nspec:\n  source:\n    chart: x\n    targetRevision: '1.0.0'")
+
+    env = {
+        "INPUT_REPO_URL": "https://github.com/org/repo.git",
+        "INPUT_TOKEN": "secret",
+        "INPUT_PACKAGE_FILE_PATH": "packages.yaml",
+        "INPUT_PACKAGE_NAME": "mypkg",
+        "INPUT_VERSION": "2.0.0",
+        "INPUT_CHART_NAME": "",
+        "INPUT_BRANCH": "main",
+    }
+
+    with patch.object(main_module, "tempfile") as m_tempfile:
+        m_tempfile.mkdtemp.return_value = str(workdir)
+        with patch.object(main_module, "run_git") as m_run_git:
+            m_run_git.return_value = MagicMock(returncode=0)
+            with patch.dict(os.environ, env, clear=False):
+                main_module.main()
+
+    out, _ = capsys.readouterr()
+    assert "Bootstrap" in out
+    assert "skipping" in out
+    assert "2.0.0" not in (workdir / "app.yaml").read_text()
+    assert "1.0.0" in (workdir / "app.yaml").read_text()
+
+    arg_lists = [c[0][0] for c in m_run_git.call_args_list]
+    assert not any(args and args[0] == "add" for args in arg_lists)
+    assert not any(args and args[0] == "commit" for args in arg_lists)
+
+
 def test_main_path_with_dollar_environment_provided_updates_one_file(tmp_path):
     """Path with $ and environment set: single file (e.g. apps/dev/application.yaml) updated."""
     workdir = tmp_path / "workdir"
