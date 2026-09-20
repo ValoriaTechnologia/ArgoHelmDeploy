@@ -21,8 +21,8 @@ inputs:
     description: New value for spec.source.targetRevision
     required: true
   chart_name:
-    description: 'Optional: chart name in spec.source.chart to target when multiple
-      Applications in the same path'
+    description: 'Optional: overrides packages[].source.chart to select which
+      Helm source to update (useful with spec.sources)'
     required: false
   branch:
     description: Branch to clone and push to

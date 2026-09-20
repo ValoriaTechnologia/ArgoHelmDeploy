@@ -78,7 +78,20 @@ def test_resolve_application_path_nonexistent_exits(tmp_path):
         main_module.resolve_application_path(str(tmp_path), "nonexistent", None)
 
 
-# --- update_target_revision ---
+# --- build_source_selector / update_target_revision ---
+
+
+def test_build_source_selector_from_pkg_and_chart_name_override():
+    sel = main_module.build_source_selector(
+        {"chart": "from-pkg", "repoURL": "https://charts.example.com"},
+        "from-input",
+    )
+    assert sel == {"chart": "from-input", "repoURL": "https://charts.example.com"}
+
+
+def test_build_source_selector_empty():
+    assert main_module.build_source_selector(None, None) == {}
+    assert main_module.build_source_selector({}, None) == {}
 
 
 def test_update_target_revision_spec_source():
@@ -87,13 +100,13 @@ def test_update_target_revision_spec_source():
     assert doc["spec"]["source"]["targetRevision"] == "2.0.0"
 
 
-def test_update_target_revision_spec_sources_no_chart_name():
+def test_update_target_revision_spec_sources_single_no_selector():
     doc = {"spec": {"sources": [{"chart": "c1", "targetRevision": "1"}]}}
     main_module.update_target_revision(doc, "2", None)
     assert doc["spec"]["sources"][0]["targetRevision"] == "2"
 
 
-def test_update_target_revision_spec_sources_with_chart_name():
+def test_update_target_revision_spec_sources_with_chart_selector():
     doc = {
         "spec": {
             "sources": [
@@ -102,7 +115,88 @@ def test_update_target_revision_spec_sources_with_chart_name():
             ]
         }
     }
-    main_module.update_target_revision(doc, "9", "c2")
+    main_module.update_target_revision(doc, "9", {"chart": "c2"})
+    assert doc["spec"]["sources"][0]["targetRevision"] == "1"
+    assert doc["spec"]["sources"][1]["targetRevision"] == "9"
+
+
+def test_update_target_revision_spec_sources_with_repo_url_selector():
+    doc = {
+        "spec": {
+            "sources": [
+                {"repoURL": "https://charts.a", "chart": "c", "targetRevision": "1"},
+                {"repoURL": "https://github.com/org/values.git", "path": "values/prod", "targetRevision": "main"},
+            ]
+        }
+    }
+    main_module.update_target_revision(doc, "2.0.0", {"repoURL": "https://charts.a"})
+    assert doc["spec"]["sources"][0]["targetRevision"] == "2.0.0"
+    assert doc["spec"]["sources"][1]["targetRevision"] == "main"
+
+
+def test_update_target_revision_spec_sources_with_path_selector():
+    doc = {
+        "spec": {
+            "sources": [
+                {"chart": "c1", "targetRevision": "1"},
+                {"repoURL": "https://github.com/org/values.git", "path": "values/prod", "targetRevision": "main"},
+            ]
+        }
+    }
+    main_module.update_target_revision(doc, "v2", {"path": "values/prod"})
+    assert doc["spec"]["sources"][0]["targetRevision"] == "1"
+    assert doc["spec"]["sources"][1]["targetRevision"] == "v2"
+
+
+def test_update_target_revision_multi_sources_no_selector_fails():
+    doc = {
+        "spec": {
+            "sources": [
+                {"chart": "c1", "targetRevision": "1"},
+                {"chart": "c2", "targetRevision": "2"},
+            ]
+        }
+    }
+    with pytest.raises(SystemExit):
+        main_module.update_target_revision(doc, "9", None)
+
+
+def test_update_target_revision_selector_no_match_fails():
+    doc = {
+        "spec": {
+            "sources": [
+                {"chart": "c1", "targetRevision": "1"},
+                {"chart": "c2", "targetRevision": "2"},
+            ]
+        }
+    }
+    with pytest.raises(SystemExit):
+        main_module.update_target_revision(doc, "9", {"chart": "missing"})
+
+
+def test_update_target_revision_selector_ambiguous_fails():
+    doc = {
+        "spec": {
+            "sources": [
+                {"chart": "same", "repoURL": "https://a", "targetRevision": "1"},
+                {"chart": "same", "repoURL": "https://b", "targetRevision": "2"},
+            ]
+        }
+    }
+    with pytest.raises(SystemExit):
+        main_module.update_target_revision(doc, "9", {"chart": "same"})
+
+
+def test_update_target_revision_and_selector_narrows():
+    doc = {
+        "spec": {
+            "sources": [
+                {"chart": "same", "repoURL": "https://a", "targetRevision": "1"},
+                {"chart": "same", "repoURL": "https://b", "targetRevision": "2"},
+            ]
+        }
+    }
+    main_module.update_target_revision(doc, "9", {"chart": "same", "repoURL": "https://b"})
     assert doc["spec"]["sources"][0]["targetRevision"] == "1"
     assert doc["spec"]["sources"][1]["targetRevision"] == "9"
 
@@ -110,7 +204,7 @@ def test_update_target_revision_spec_sources_with_chart_name():
 def test_update_target_revision_chart_name_mismatch_exits():
     doc = {"spec": {"source": {"chart": "other", "targetRevision": "1"}}}
     with pytest.raises(SystemExit):
-        main_module.update_target_revision(doc, "2", "wanted")
+        main_module.update_target_revision(doc, "2", {"chart": "wanted"})
 
 
 def test_update_target_revision_no_source_exits():
@@ -254,6 +348,132 @@ def test_main_bootstrap_true_skips_without_updating(tmp_path, capsys):
     arg_lists = [c[0][0] for c in m_run_git.call_args_list]
     assert not any(args and args[0] == "add" for args in arg_lists)
     assert not any(args and args[0] == "commit" for args in arg_lists)
+
+
+def test_main_package_source_selects_multi_source(tmp_path):
+    """packages[].source selects the correct entry among spec.sources."""
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    (workdir / "packages.yaml").write_text("""packages:
+  - name: mypkg
+    path: app.yaml
+    source:
+      chart: c2
+""")
+    (workdir / "app.yaml").write_text("""apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: test
+spec:
+  sources:
+    - chart: c1
+      targetRevision: "1.0.0"
+    - chart: c2
+      targetRevision: "1.0.0"
+""")
+
+    env = {
+        "INPUT_REPO_URL": "https://github.com/org/repo.git",
+        "INPUT_TOKEN": "secret",
+        "INPUT_PACKAGE_FILE_PATH": "packages.yaml",
+        "INPUT_PACKAGE_NAME": "mypkg",
+        "INPUT_VERSION": "2.0.0",
+        "INPUT_CHART_NAME": "",
+        "INPUT_BRANCH": "main",
+    }
+
+    with patch.object(main_module, "tempfile") as m_tempfile:
+        m_tempfile.mkdtemp.return_value = str(workdir)
+        with patch.object(main_module, "run_git") as m_run_git:
+            m_run_git.return_value = MagicMock(returncode=0)
+            with patch.dict(os.environ, env, clear=False):
+                main_module.main()
+
+    import yaml
+    doc = yaml.safe_load((workdir / "app.yaml").read_text())
+    assert doc["spec"]["sources"][0]["targetRevision"] == "1.0.0"
+    assert doc["spec"]["sources"][1]["targetRevision"] == "2.0.0"
+
+
+def test_main_chart_name_overrides_package_source_chart(tmp_path):
+    """INPUT_CHART_NAME overrides packages[].source.chart."""
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    (workdir / "packages.yaml").write_text("""packages:
+  - name: mypkg
+    path: app.yaml
+    source:
+      chart: c1
+""")
+    (workdir / "app.yaml").write_text("""apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: test
+spec:
+  sources:
+    - chart: c1
+      targetRevision: "1.0.0"
+    - chart: c2
+      targetRevision: "1.0.0"
+""")
+
+    env = {
+        "INPUT_REPO_URL": "https://github.com/org/repo.git",
+        "INPUT_TOKEN": "secret",
+        "INPUT_PACKAGE_FILE_PATH": "packages.yaml",
+        "INPUT_PACKAGE_NAME": "mypkg",
+        "INPUT_VERSION": "3.0.0",
+        "INPUT_CHART_NAME": "c2",
+        "INPUT_BRANCH": "main",
+    }
+
+    with patch.object(main_module, "tempfile") as m_tempfile:
+        m_tempfile.mkdtemp.return_value = str(workdir)
+        with patch.object(main_module, "run_git") as m_run_git:
+            m_run_git.return_value = MagicMock(returncode=0)
+            with patch.dict(os.environ, env, clear=False):
+                main_module.main()
+
+    import yaml
+    doc = yaml.safe_load((workdir / "app.yaml").read_text())
+    assert doc["spec"]["sources"][0]["targetRevision"] == "1.0.0"
+    assert doc["spec"]["sources"][1]["targetRevision"] == "3.0.0"
+
+
+def test_main_multi_sources_without_selector_fails(tmp_path):
+    """Multiple spec.sources without packages[].source or chart_name fails."""
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    (workdir / "packages.yaml").write_text("""packages:
+  - name: mypkg
+    path: app.yaml
+""")
+    (workdir / "app.yaml").write_text("""kind: Application
+spec:
+  sources:
+    - chart: c1
+      targetRevision: "1.0.0"
+    - chart: c2
+      targetRevision: "1.0.0"
+""")
+
+    env = {
+        "INPUT_REPO_URL": "https://github.com/org/repo.git",
+        "INPUT_TOKEN": "secret",
+        "INPUT_PACKAGE_FILE_PATH": "packages.yaml",
+        "INPUT_PACKAGE_NAME": "mypkg",
+        "INPUT_VERSION": "2.0.0",
+        "INPUT_CHART_NAME": "",
+        "INPUT_BRANCH": "main",
+    }
+
+    with patch.object(main_module, "tempfile") as m_tempfile:
+        m_tempfile.mkdtemp.return_value = str(workdir)
+        with patch.object(main_module, "run_git") as m_run_git:
+            m_run_git.return_value = MagicMock(returncode=0)
+            with patch.dict(os.environ, env, clear=False):
+                with pytest.raises(SystemExit):
+                    main_module.main()
 
 
 def test_main_path_with_dollar_environment_provided_updates_one_file(tmp_path):

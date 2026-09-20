@@ -58,29 +58,70 @@ def resolve_application_path(workdir: str, package_path: str, chart_name: str | 
     return (str(resolved), doc)
 
 
-def update_target_revision(doc: dict, version: str, chart_name: str | None) -> None:
+def build_source_selector(
+    pkg_source: dict | None,
+    chart_name: str | None,
+) -> dict[str, str]:
+    """Merge packages[].source with optional chart_name input (chart_name overrides chart)."""
+    selector: dict[str, str] = {}
+    if isinstance(pkg_source, dict):
+        for key in ("chart", "repoURL", "path"):
+            val = pkg_source.get(key)
+            if val is not None and str(val).strip() != "":
+                selector[key] = str(val).strip()
+    if chart_name:
+        selector["chart"] = chart_name
+    return selector
+
+
+def source_matches(source: dict, selector: dict[str, str]) -> bool:
+    """Return True if source matches all selector fields (AND)."""
+    if not selector:
+        return True
+    for key, expected in selector.items():
+        if source.get(key) != expected:
+            return False
+    return True
+
+
+def format_selector(selector: dict[str, str]) -> str:
+    if not selector:
+        return "(none)"
+    return ", ".join(f"{k}={v}" for k, v in selector.items())
+
+
+def update_target_revision(doc: dict, version: str, selector: dict[str, str] | None = None) -> None:
+    selector = selector or {}
     spec = doc.get("spec") or {}
     source = spec.get("source")
     sources = spec.get("sources")
 
     if sources and isinstance(sources, list):
-        target = None
-        if chart_name:
-            for s in sources:
-                if s and s.get("chart") == chart_name:
-                    target = s
-                    break
-        if target is None:
-            target = sources[0] if sources else None
-        if not target:
-            fail(f'Chart "{chart_name}" not found in spec.sources.')
-        target["targetRevision"] = version
+        candidates = [s for s in sources if s and isinstance(s, dict)]
+        if len(candidates) > 1 and not selector:
+            fail(
+                "Application has multiple spec.sources; declare packages[].source "
+                "(chart, repoURL, and/or path) or pass chart_name to select one."
+            )
+        matches = [s for s in candidates if source_matches(s, selector)]
+        if not matches:
+            fail(f"No spec.sources entry matches selector: {format_selector(selector)}")
+        if len(matches) > 1:
+            fail(
+                f"Multiple spec.sources entries match selector: {format_selector(selector)}; "
+                "narrow packages[].source."
+            )
+        matches[0]["targetRevision"] = version
         return
 
     if not source:
         fail("Application manifest has no spec.source (or spec.sources).")
-    if chart_name and source.get("chart") != chart_name:
-        fail(f'Chart in spec.source is "{source.get("chart")}", not "{chart_name}".')
+    if selector and not source_matches(source, selector):
+        fail(
+            f'spec.source does not match selector: {format_selector(selector)} '
+            f'(got chart={source.get("chart")!r}, repoURL={source.get("repoURL")!r}, '
+            f'path={source.get("path")!r}).'
+        )
     source["targetRevision"] = version
 
 
@@ -146,8 +187,13 @@ def main() -> None:
             fail("Package path contains $; the environment input is required.")
         pkg_path = pkg_path.replace("$", environment)
 
+    pkg_source = pkg.get("source")
+    if pkg_source is not None and not isinstance(pkg_source, dict):
+        fail('Package "source" must be a mapping (chart, repoURL, and/or path).')
+    selector = build_source_selector(pkg_source, chart_name)
+
     app_path, app_doc = resolve_application_path(workdir, pkg_path, chart_name)
-    update_target_revision(app_doc, version, chart_name)
+    update_target_revision(app_doc, version, selector)
     with open(app_path, "w", encoding="utf-8") as f:
         yaml.dump(app_doc, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
     rel_path = Path(app_path).relative_to(workdir)

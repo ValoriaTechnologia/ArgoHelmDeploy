@@ -10,11 +10,44 @@ The action expects a YAML file in the target repo with this structure:
 packages:
   - name: NOM_PACKAGE
     path: ./application.yaml
+    source:                    # optional; required when Application has multiple spec.sources
+      chart: my-helm-chart     # and/or repoURL / path
 ```
 
 - **`name`**: Identifies the package (used with input `package_name`).
 - **`path`**: Path to the ArgoCD Application manifest **file** (must point to a file with `kind: Application`). Directories are not allowed. If the path contains **`$`**, it is replaced by the action input **`environment`** (required in that case); e.g. `./apps/$/application.yaml` with `environment: dev` → `./apps/dev/application.yaml`.
 - **`bootstrap`**: Optional boolean (`true` / `false`). If `true`, the action finds the package but does **not** bump `targetRevision` (it prints a skip message and exits successfully). Use this for bootstrap-style applications that should not receive automated Helm version updates.
+- **`source`**: Optional mapping used to select which entry to update when the Application uses `spec.sources` (multi-source). All fields present must match (AND). Supported keys:
+  - **`chart`**: Helm chart name
+  - **`repoURL`**: source repository URL
+  - **`path`**: git path within the repo
+
+  With a single `spec.source` (or a single entry in `spec.sources`), `source` is optional. With **multiple** `spec.sources`, `source` (or the `chart_name` input) is **required**; the action fails if zero or more than one entry matches. There is no silent fallback to the first source.
+
+### Multi-source example
+
+```yaml
+# packages.yaml
+packages:
+  - name: my-app
+    path: apps/$/application.yaml
+    source:
+      chart: my-helm-chart
+```
+
+```yaml
+# application.yaml (excerpt)
+spec:
+  sources:
+    - repoURL: https://charts.example.com
+      chart: my-helm-chart
+      targetRevision: 1.0.0
+    - repoURL: https://github.com/org/values.git
+      path: values/prod
+      targetRevision: main
+```
+
+Only the Helm source matching `chart: my-helm-chart` is updated.
 
 ## Inputs
 
@@ -25,7 +58,7 @@ packages:
 | `package_file_path` | Path to the packages YAML file in the repo (e.g. `packages.yaml`) | Yes |
 | `package_name` | Name of the package to update (must match `packages[].name`) | Yes |
 | `version` | New value for `spec.source.targetRevision` | Yes |
-| `chart_name` | Optional. Chart name in `spec.source.chart` when multiple Applications exist in the same path | No |
+| `chart_name` | Optional. Overrides `packages[].source.chart` to select which source to update | No |
 | `branch` | Branch to clone and push to | No (default: `main`) |
 | `environment` | Environment name (required when package path contains `$`). The `$` in path is replaced by this value | No (required if path contains `$`) |
 
@@ -89,7 +122,7 @@ The workflow [.github/workflows/run-on-mock.yml](.github/workflows/run-on-mock.y
 2. Reads the file at `package_file_path` and finds the package whose `name` equals `package_name`.
 3. If `bootstrap` is `true` for that package, the action prints a skip message and exits successfully (no Application file change, no commit or push).
 4. If the package `path` contains `$`, the **`environment`** input is required; `$` is replaced by that value to get the file path. The path must point to a single Application manifest **file** (directories are not allowed).
-5. Sets `spec.source.targetRevision` (or the matching source in `spec.sources` when using `chart_name`) to `version`.
+5. Builds a source selector from `packages[].source` and optional input `chart_name` (which overrides `source.chart`). Sets `targetRevision` on the matching `spec.source` or `spec.sources` entry. Multiple sources without a selector cause a failure.
 6. Commits the change with message `chore(helm): update <package_name> to <version>` and pushes to the same branch.
 
 **One file per run.** To update multiple environments, the workflow must call the action **multiple times** (e.g. matrix over `environment`: one job or step per value).
