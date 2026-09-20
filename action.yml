@@ -21,8 +21,8 @@ inputs:
     description: New value for spec.source.targetRevision
     required: true
   chart_name:
-    description: 'Optional: overrides packages[].source.chart to select which
-      Helm source to update (useful with spec.sources)'
+    description: 'Optional: overrides packages[].source.chart to select which Helm
+      source to update (useful with spec.sources)'
     required: false
   branch:
     description: Branch to clone and push to
@@ -34,4 +34,4 @@ inputs:
     required: false
 runs:
   using: docker
-  image: docker://ghcr.io/valoriatechnologia/argo-helm-deploy:v0.5.0
+  image: docker://ghcr.io/valoriatechnologia/argo-helm-deploy:v0.6.0
